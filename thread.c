@@ -37,6 +37,11 @@ typedef struct readyQ{
 
 
 readyQ *rq;
+
+Tid currentSizeQ = 0;
+struct thread *runningThread;
+
+int *availableThreadIds;
   
 node *buildNode(struct thread *thr)  { 
     node *temp = (struct node*)malloc(sizeof(node));
@@ -114,8 +119,7 @@ struct thread* poll (){
 /* This is the thread control block */
 
 
-Tid currentSizeQ = 0;
-struct thread *runningThread;
+
 
 
 
@@ -131,15 +135,20 @@ void thread_init(void) {
 	runningThread->id = 0;
 	runningThread->mycontext = savedContext;
 
+	availableThreadIds = (int *)malloc(THREAD_MAX_THREADS*sizeof(int));
+	
+	for(int i = 0; i < THREAD_MAX_THREADS; i++){
+		availableThreadIds[i] = 0;
+	}
 }
 
 Tid thread_id() {
-	TBD();
+
 	return THREAD_INVALID;
 }
 
 Tid thread_create(void (*fn) (void *), void *parg) {
-	TBD();
+
 	return THREAD_FAILED;
 }
 
@@ -161,16 +170,29 @@ Tid thread_yield(Tid want_tid) {
 		enQ(runningThread);
 		struct thread *runningThread = poll();
 		err = setcontext(&(runningThread->mycontext));
+		assert(!err);
+
 		return runningThread->id;
-
+	} else if (want_tid < -2 ){
+		return THREAD_INVALID;
+	} else{
+		if (rq->head == NULL){
+			return THREAD_NONE;
+		}
+		struct thread *runningThread = deQ();
+		if (runningThread == NULL){
+			return THREAD_INVALID;
+		}
+		enQ(runningThread);
+		err = setcontext(&(runningThread->mycontext));
+		assert(!err);
+		return want_tid;
 	}
-
-	
-
-
 
 	return THREAD_SELF;
 }
+
+
 
 Tid thread_exit() {
 	TBD();
