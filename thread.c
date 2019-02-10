@@ -41,7 +41,7 @@ readyQ *rq;
 int *availableThreadIds;
   
 node *buildNode(struct thread *thr)  { 
-    node *temp = (struct node*)malloc(sizeof(node));
+    node *temp = (node*)malloc(sizeof(node));
 	temp->thr = thr;
     temp->next = NULL; 
     
@@ -84,9 +84,9 @@ void remove_tobedeleted(){
 		if (tempNext-> thr->status == 2 && (rq->head == tempNext)){
 			temp = tempNext;
 			tempNext = tempNext->next;
-			head = tempNext;
+			rq->head = tempNext;
 
-			struct node *thrPointer = temp->thr;
+			struct thread *thrPointer = temp->thr;
 			availableThreadIds[thrPointer->id] = 0;
 			//free the thread;
 			free(temp->thr->stack_ptr);			
@@ -98,7 +98,7 @@ void remove_tobedeleted(){
 			temp = tempNext;
 			tempNext = tempNext->next;
 
-			struct node *thrPointer = temp->thr;
+			struct thread *thrPointer = temp->thr;
 			availableThreadIds[thrPointer->id] = 0;
 			//free the thread;
 			free(temp->thr->stack_ptr);			
@@ -222,9 +222,9 @@ Tid thread_create(void (*fn) (void *), void *parg) {
 	assignedID = i;
 	availableThreadIds[i] = 1;
 
-	thread *createdThread = (struct thread *)malloc((sizeof(struct thread)));
+	struct thread *createdThread = (struct thread *)malloc((sizeof(struct thread)));
 	
-	if (!assigningStack || createdThread) {
+	if (!createdThread) {
 		return THREAD_NOMEMORY;
 	}
 
@@ -233,15 +233,15 @@ Tid thread_create(void (*fn) (void *), void *parg) {
 
 
 	int err = 0;
-	ucontext_t mycontext;
-	err = getcontext(&mycontext);
+	ucontext_t savedContext;
+	err = getcontext(&savedContext);
 	assert(!err);
 	createdThread->mycontext = mycontext;
 
-	createdThread->mycontext.gregs[REG_RSP] = (unsigned long) assigningStack;
-	createdThread->mycontext.gregs[REG_RIP] = (unsigned long) &thread_stub;
-	createdThread->mycontext.gregs[REG_RDI] = (unsigned long) fn;
-	createdThread->mycontext.gregs[REG_RSI] = (unsigned long) parg;
+	createdThread->mycontext.uc_mcontext.gregs[REG_RSP] = (unsigned long) assigningStack;
+	createdThread->mycontext.uc_mcontext.gregs[REG_RIP] = (unsigned long) &thread_stub;
+	createdThread->mycontext.uc_mcontext.gregs[REG_RDI] = (unsigned long) fn;
+	createdThread->mycontext.uc_mcontext.gregs[REG_RSI] = (unsigned long) parg;
 
 	// add to ready Q
 
@@ -308,7 +308,7 @@ Tid thread_yield(Tid want_tid) {
 
 Tid thread_exit() {
 
-	if (readyQ->head == NULL{
+	if (rq->head == NULL){
 		return THREAD_NONE;
 	}
 	else{
