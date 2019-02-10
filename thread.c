@@ -37,10 +37,6 @@ typedef struct readyQ{
 
 
 readyQ *rq;
-
-Tid currentSizeQ = 0;
-struct thread *runningThread;
-
 int *availableThreadIds;
   
 node *buildNode(struct thread *thr)  { 
@@ -61,7 +57,7 @@ void initializeQ() {
 void enQ (struct thread *thr){
 	node *addedNode = buildNode(thr);
 
-	if(rq->head == NULL && rq->back == NULL){
+	if(rq->head == NULL){
 		rq->head = addedNode;
 		rq->back = addedNode;
 		return;
@@ -83,14 +79,21 @@ struct thread* deQ (Tid id){
 
 	} else{
 		node *temp = NULL;
-		node *nextTemp = rq->head->next;
+		node *nextTemp = rq->head;
 
 		while(nextTemp != NULL){
-			if(nextTemp->thr->id == id){
+			if (nextTemp->thr->id == id && temp == NULL){
+				rq->head = nextTemp->next;
+				struct thread* thr = nextTemp->thr;
+				free(nextTemp);
+				return thr;
+
+			} else if(nextTemp->thr->id == id){
 				temp->next = nextTemp->next;
 				struct thread* thr = nextTemp->thr;
 				free(nextTemp);
 				return thr;
+
 			}
 			temp = nextTemp;
 			nextTemp = nextTemp->next;
@@ -120,6 +123,7 @@ struct thread* poll (){
 
 
 
+struct thread *runningThread;
 
 
 
@@ -148,8 +152,8 @@ Tid thread_id() {
 }
 
 Tid thread_create(void (*fn) (void *), void *parg) {
+	
 
-	return THREAD_FAILED;
 }
 
 Tid thread_yield(Tid want_tid) {
@@ -160,31 +164,36 @@ Tid thread_yield(Tid want_tid) {
 		return want_tid;
 
 	} else if(want_tid == THREAD_ANY){
-		//change it to the array implementation
-		currentSizeQ += 1;
 
 		if (rq->head == NULL){
 			return THREAD_NONE;
 		}
-
+		err = getcontext(&(runningThread->mycontext));
+		runningThread->status = 1;
+		assert(!err);
 		enQ(runningThread);
-		struct thread *runningThread = poll();
+
+		struct thread *threadFromQueue = poll();
 		err = setcontext(&(runningThread->mycontext));
 		assert(!err);
+		return threadFromQueue->id;
 
-		return runningThread->id;
 	} else if (want_tid < -2 ){
 		return THREAD_INVALID;
 	} else{
 		if (rq->head == NULL){
-			return THREAD_NONE;
-		}
-		struct thread *runningThread = deQ();
-		if (runningThread == NULL){
 			return THREAD_INVALID;
 		}
+		struct thread *threadFromQueue = deQ(want_tid);
+		if (threadFromQueue == NULL){
+			return THREAD_INVALID;
+		}
+		err = getcontext(&(runningThread->mycontext));
+		runningThread->status = 1;
+		assert(!err);
 		enQ(runningThread);
-		err = setcontext(&(runningThread->mycontext));
+
+		err = setcontext(&(threadFromQueue->mycontext));
 		assert(!err);
 		return want_tid;
 	}
