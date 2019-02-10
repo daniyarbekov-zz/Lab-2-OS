@@ -35,6 +35,8 @@ typedef struct readyQ{
 	node *back;
 } readyQ;
 
+
+readyQ *rq;
   
 node *buildNode(struct thread *thr)  { 
     node *temp = (struct node*)malloc(sizeof(node));
@@ -92,27 +94,43 @@ struct thread* deQ (Tid id){
 	}
 }
 
+struct thread* poll (){
+	if(rq->head == NULL){
+		return NULL;
+
+	} else{
+		node *temp = rq->head;
+		node *nextTemp = rq->head->next;
+
+		rq->head = nextTemp;
+		struct thread* thre = temp->thr;
+		free(temp);
+	
+		return thre;
+	}
+}
+
 
 /* This is the thread control block */
 
 
-Tid currentThreadId = -1000;
 Tid currentSizeQ = 0;
+struct thread *runningThread;
 
 
-readyQ *rq;
 
 void thread_init(void) {
 	/* your optional code here */
 
-	initializeQ(rq);
+	initializeQ();
+
+	ucontext_t savedContext;
 	int err = 0;
+	err = getcontext(&savedContext);
+	runningThread = (struct thread *)malloc((sizeof(struct thread)));
+	runningThread->id = 0;
+	runningThread->mycontext = savedContext;
 
-	ucontext_t firstContext;
-	err = getcontext(&firstContext);
-	assert(!err);
-
-	currentThreadId = 0;
 }
 
 Tid thread_id() {
@@ -126,16 +144,11 @@ Tid thread_create(void (*fn) (void *), void *parg) {
 }
 
 Tid thread_yield(Tid want_tid) {
-	ucontext_t savedContext;
 	int err = 0;
-	err = getcontext(&savedContext);
-	assert(!err);
-	err = 0;
-
-	if (want_tid == currentThreadId || want_tid == THREAD_SELF){
-		err = setcontext(savedContext);
+	if (want_tid == runningThread->id || want_tid == THREAD_SELF){
+		err = setcontext(&(runningThread->mycontext));
 		assert(!err);
-		return currentThreadId;
+		return want_tid;
 
 	} else if(want_tid == THREAD_ANY){
 		//change it to the array implementation
@@ -144,15 +157,11 @@ Tid thread_yield(Tid want_tid) {
 		if (rq->head == NULL){
 			return THREAD_NONE;
 		}
-		struct thread *threadFromQueue = deQ(want_tid);;
-		struct thread *runningThread = (struct thread *)malloc(sizeof(struct thread));
 
-		//change implementation to the array
-		runningThread->id = currentSizeQ + 1;
-		runningThread->mycontext = savedContext;
-		
-		rq.enQ(runningThread);
-
+		enQ(runningThread);
+		struct thread *runningThread = poll();
+		err = setcontext(&(runningThread->mycontext));
+		return runningThread->id;
 
 	}
 
