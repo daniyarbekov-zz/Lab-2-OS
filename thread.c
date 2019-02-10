@@ -19,6 +19,7 @@ struct thread {
 	Tid id;
 	//status = 0 (running),(ready) 
 	int status;
+	void *stack_ptr;
 	ucontext_t mycontext;
 };
 
@@ -72,6 +73,50 @@ void enQ (struct thread *thr){
 		return;
 	}
 }
+
+
+//remove all nodes in ready q whose status = 2
+void remove_tobedeleted(){
+	struct node *tempNext = rq->head;
+	struct node *temp = NULL;
+
+	while(tempNext == NULL || tempNext->next != NULL){
+		if (tempNext-> thr->status == 2 && (rq->head == tempNext)){
+			temp = tempNext;
+			tempNext = tempNext->next;
+			head = tempNext;
+
+			struct node *thrPointer = temp->thr;
+			availableThreadIds[thrPointer->id] = 0;
+			//free the thread;
+			free(temp->thr->stack_ptr);			
+			free(temp->thr);
+			//free node
+			free(temp);
+		} else if(tempNext->thr->status == 2){
+			temp->next = tempNext->next;
+			temp = tempNext;
+			tempNext = tempNext->next;
+
+			struct node *thrPointer = temp->thr;
+			availableThreadIds[thrPointer->id] = 0;
+			//free the thread;
+			free(temp->thr->stack_ptr);			
+			free(temp->thr);
+			//free node
+			free(temp);
+		} else {
+			temp = tempNext;
+			tempNext = tempNext->next;
+		}		
+	 
+	}
+	
+	return;
+}
+
+
+
 
 struct thread* deQ (Tid id){
 	if(rq->head == NULL){
@@ -138,7 +183,7 @@ void thread_init(void) {
 	runningThread = (struct thread *)malloc((sizeof(struct thread)));
 	runningThread->id = 0;
 	runningThread->mycontext = savedContext;
-
+	runningThread->stack_ptr = NULL;
 	availableThreadIds = (int *)malloc(THREAD_MAX_THREADS*sizeof(int));
 	
 	for(int i = 0; i < THREAD_MAX_THREADS; i++){
@@ -175,25 +220,28 @@ Tid thread_create(void (*fn) (void *), void *parg) {
 		return THREAD_NOMORE;
 	}
 	assignedID = i;
+	availableThreadIds[i] = 1;
 
 	thread *createdThread = (struct thread *)malloc((sizeof(struct thread)));
-	void *assigningStack = (void *)malloc(THREAD_MIN_STACK);
 	
 	if (!assigningStack || createdThread) {
 		return THREAD_NOMEMORY;
 	}
-	
-	assigningStack = (assigningStack+THREAD_MIN_STACK) - (THREAD_MIN_STACK)%16 ;
+
+	createdThread->stack_ptr = (void *)malloc(THREAD_MIN_STACK);	
+	void *assigningStack = (createdThread->stack_ptr +THREAD_MIN_STACK) - (THREAD_MIN_STACK)%16;
+
 
 	int err = 0;
-	ucontext mycontext;
+	ucontext_t mycontext;
 	err = getcontext(&mycontext);
+	assert(!err);
 	createdThread->mycontext = mycontext;
 
-	createdThread->uc_mcontext.gregs[REG_RSP] = (unsigned long) stack;
-	createdThread->uc_mcontext.gregs[REG_RIP] = (unsigned long) &thread_stub;
-	createdThread->uc_mcontext.gregs[REG_RDI] = (unsigned long) fn;
-	createdThread->uc_mcontext.gregs[REG_RSI] = (unsigned long) parg;
+	createdThread->mycontext.gregs[REG_RSP] = (unsigned long) assigningStack;
+	createdThread->mycontext.gregs[REG_RIP] = (unsigned long) &thread_stub;
+	createdThread->mycontext.gregs[REG_RDI] = (unsigned long) fn;
+	createdThread->mycontext.gregs[REG_RSI] = (unsigned long) parg;
 
 	// add to ready Q
 
@@ -205,6 +253,9 @@ Tid thread_create(void (*fn) (void *), void *parg) {
 
 
 Tid thread_yield(Tid want_tid) {
+	
+	remove_tobedeleted();
+
 	int err = 0;
 	if (want_tid == runningThread->id || want_tid == THREAD_SELF){
 		assert(!err);
@@ -221,6 +272,7 @@ Tid thread_yield(Tid want_tid) {
 		enQ(runningThread);
 
 		struct thread *threadFromQueue = poll();
+		runningThread = threadFromQueue;
 		threadFromQueue->status = 0;
 
 		err = setcontext(&(runningThread->mycontext));
@@ -242,6 +294,7 @@ Tid thread_yield(Tid want_tid) {
 		assert(!err);
 		enQ(runningThread);
 		threadFromQueue->status = 0;
+		runningThread = threadFromQueue;
 
 		err = setcontext(&(threadFromQueue->mycontext));
 		assert(!err);
@@ -254,14 +307,52 @@ Tid thread_yield(Tid want_tid) {
 
 
 Tid thread_exit() {
-	TBD();
+
+	if (readyQ->head == NULL{
+		return THREAD_NONE;
+	}
+	else{
+		runningThread->status = 2; // set flag
+		int err = thread_yield(THREAD_ANY);
+
+	}
 	return THREAD_FAILED;
 }
 
-Tid thread_kill(Tid tid) {
-	TBD();
-	return THREAD_FAILED;
+
+
+Tid checkQ(Tid tid){
+	if (rq->head == NULL){
+		return THREAD_NONE;	
+	}
+	else{
+		node *temp = rq->head;
+		
+		while(temp != NULL){
+			if (temp->thr->id == tid){
+				
+				temp->thr->status = 2;
+				return temp->thr->id; //TODO: change	
+			}
+			temp = temp->next;
+		}
+	return THREAD_INVALID;
+	} 
 }
+
+Tid thread_kill(Tid tid) {
+	if (tid == runningThread->id){
+		return THREAD_INVALID;
+	}
+	int err = checkQ(tid);
+	if (err == THREAD_NONE || err == THREAD_INVALID){
+	return THREAD_INVALID;
+	}
+	return err;
+}
+
+
+
 
 
 
