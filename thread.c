@@ -146,22 +146,69 @@ void thread_init(void) {
 	}
 }
 
+void thread_stub(void (*thread_main)(void *), void *arg) {
+	Tid ret;
+
+	thread_main(arg); // call thread_main() function with arg
+	ret = thread_exit();
+	// we should only get here if we are the last thread. 
+	assert(ret == THREAD_NONE);
+	// all threads are done, so process should exit
+	exit(0);
+}
+
 Tid thread_id() {
 
-	return THREAD_INVALID;
+	return runningThread->id;
 }
 
 Tid thread_create(void (*fn) (void *), void *parg) {
-	
 
+	Tid assignedID;
+	int i = 0;
+	for (; i < THREAD_MAX_THREADS; i++){
+		if(availableThreadIds[i] == 0){
+			break;
+		}
+	}
+	if(i == THREAD_MAX_THREADS){
+		return THREAD_NOMORE;
+	}
+	assignedID = i;
+
+	thread *createdThread = (struct thread *)malloc((sizeof(struct thread)));
+	void *assigningStack = (void *)malloc(THREAD_MIN_STACK);
+	
+	if (!assigningStack || createdThread) {
+		return THREAD_NOMEMORY;
+	}
+	
+	assigningStack = (assigningStack+THREAD_MIN_STACK) - (THREAD_MIN_STACK)%16 ;
+
+	int err = 0;
+	ucontext mycontext;
+	err = getcontext(&mycontext);
+	createdThread->mycontext = mycontext;
+
+	createdThread->uc_mcontext.gregs[REG_RSP] = (unsigned long) stack;
+	createdThread->uc_mcontext.gregs[REG_RIP] = (unsigned long) &thread_stub;
+	createdThread->uc_mcontext.gregs[REG_RDI] = (unsigned long) fn;
+	createdThread->uc_mcontext.gregs[REG_RSI] = (unsigned long) parg;
+
+	// add to ready Q
+
+	createdThread->status  = 1;
+	enQ(createdThread);
+
+	return assignedID;
 }
+
 
 Tid thread_yield(Tid want_tid) {
 	int err = 0;
 	if (want_tid == runningThread->id || want_tid == THREAD_SELF){
-		err = setcontext(&(runningThread->mycontext));
 		assert(!err);
-		return want_tid;
+		return runningThread->id;
 
 	} else if(want_tid == THREAD_ANY){
 
@@ -174,6 +221,8 @@ Tid thread_yield(Tid want_tid) {
 		enQ(runningThread);
 
 		struct thread *threadFromQueue = poll();
+		threadFromQueue->status = 0;
+
 		err = setcontext(&(runningThread->mycontext));
 		assert(!err);
 		return threadFromQueue->id;
@@ -192,6 +241,7 @@ Tid thread_yield(Tid want_tid) {
 		runningThread->status = 1;
 		assert(!err);
 		enQ(runningThread);
+		threadFromQueue->status = 0;
 
 		err = setcontext(&(threadFromQueue->mycontext));
 		assert(!err);
