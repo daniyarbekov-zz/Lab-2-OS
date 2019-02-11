@@ -67,12 +67,16 @@ test_basic()
 	}
 	printf("my id is %d\n", thread_id());
 	assert(thread_ret_ok(ret));
+
+	printf("yuchen: checkpoint1 \n");
 	ret2 = thread_yield(ret);
+	//printf("yuchen: value of ret2 is %d and value of ret is %d",ret2,ret);
 	assert(ret2 == ret);
 
+	//printf("yuchen: checkpoint2 \n");
 	/* store address of some variable on stack */
 	stack_array[thread_id()] = (long *)&ret;
-
+	//printf("yuchen: checkpoint3 \n");
 	int ii, jj;
 	/* we will be using THREAD_MAX_THREADS threads later */
 	Tid child[THREAD_MAX_THREADS];
@@ -82,6 +86,7 @@ test_basic()
 		ret = snprintf(msg[ii], 1023, "hello from thread %3d", ii);
 		assert(ret > 0);
 		child[ii] = thread_create((void (*)(void *))hello, msg[ii]);
+		printf("DID YOU GET STUCK????\n");
 		assert(thread_ret_ok(child[ii]));
 	}
 	printf("my id is %d\n", thread_id());

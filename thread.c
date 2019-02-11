@@ -56,6 +56,7 @@ void initializeQ() {
 
 
 void enQ (struct thread *thr){
+	//printf("calling build node\n");
 	node *addedNode = buildNode(thr);
 
 	if(rq->head == NULL){
@@ -77,11 +78,13 @@ void enQ (struct thread *thr){
 
 //remove all nodes in ready q whose status = 2
 void remove_tobedeleted(){
+
 	struct node *tempNext = rq->head;
 	struct node *temp = NULL;
-
-	while(tempNext == NULL || tempNext->next != NULL){
+	while(tempNext != NULL && tempNext->next != NULL){
+		//printf("IN loop\n");
 		if (tempNext-> thr->status == 2 && (rq->head == tempNext)){
+			//printf("DELETE FIRST THING\n");
 			temp = tempNext;
 			tempNext = tempNext->next;
 			rq->head = tempNext;
@@ -94,6 +97,7 @@ void remove_tobedeleted(){
 			//free node
 			free(temp);
 		} else if(tempNext->thr->status == 2){
+			//printf("REMOVE SOMETHING IN BETWEEn loop\n");
 			temp->next = tempNext->next;
 			temp = tempNext;
 			tempNext = tempNext->next;
@@ -108,10 +112,23 @@ void remove_tobedeleted(){
 		} else {
 			temp = tempNext;
 			tempNext = tempNext->next;
+			//printf("go through the loop\n");
 		}		
 	 
 	}
-	
+	//printf("remove finished in remove\n");
+	return;
+}
+
+void printNodes(){
+	//printf("PRINTING IS started\n");
+	struct node *temp = rq->head;
+	while(temp != NULL){
+	//	printf("node in queue: %d, ", temp->thr->id);
+		temp = temp->next;
+	}
+	//printf("\n");
+	//printf("finished printing\n");
 	return;
 }
 
@@ -163,6 +180,48 @@ struct thread* poll (){
 	}
 }
 
+int checkQ(Tid tid){
+		//printf("THREAD checkq IS STARTED\n");
+	if (rq->head == NULL){
+		return THREAD_NONE;	
+	} else{
+		node *temp = rq->head;
+		
+		while(temp != NULL){
+			if (temp->thr->id == tid){
+				
+				temp->thr->status = 2;
+				//printf("THREAD checkQ IS done: SENDING ID\n");
+				return temp->thr->id; //TODO: change	
+			}
+			temp = temp->next;
+		}
+		//printf("checkq is done, CANT FIND THIS ID\n");
+		return THREAD_INVALID;
+	} 
+}
+
+int checkIfExists(Tid tid){
+
+	if (rq->head == NULL){
+		return THREAD_NONE;	
+	} else{
+		node *temp = rq->head;
+		
+		while(temp != NULL){
+			if (temp->thr->id == tid){
+				
+				//printf("THREAD CHECK IF EXISTS IS done: SENDING ID\n");
+				return temp->thr->id; //TODO: change	
+			}
+			temp = temp->next;
+		}
+		return THREAD_INVALID;
+	} 
+}
+
+
+
 
 /* This is the thread control block */
 
@@ -174,14 +233,17 @@ struct thread *runningThread;
 
 void thread_init(void) {
 	/* your optional code here */
-
+	//printf("INTIALIATION STARTED\n");
 	initializeQ();
 
 	ucontext_t savedContext;
 	int err = 0;
 	err = getcontext(&savedContext);
+	assert(!err);
 	runningThread = (struct thread *)malloc((sizeof(struct thread)));
 	runningThread->id = 0;
+	
+	runningThread->status = 0;
 	runningThread->mycontext = savedContext;
 	runningThread->stack_ptr = NULL;
 	availableThreadIds = (int *)malloc(THREAD_MAX_THREADS*sizeof(int));
@@ -189,11 +251,14 @@ void thread_init(void) {
 	for(int i = 0; i < THREAD_MAX_THREADS; i++){
 		availableThreadIds[i] = 0;
 	}
+	availableThreadIds[0] = 1;
+
+	//printf("INTIALIATION done\n");
 }
 
 void thread_stub(void (*thread_main)(void *), void *arg) {
 	Tid ret;
-
+	//printf("THREAD STUB started\n");
 	thread_main(arg); // call thread_main() function with arg
 	ret = thread_exit();
 	// we should only get here if we are the last thread. 
@@ -203,14 +268,14 @@ void thread_stub(void (*thread_main)(void *), void *arg) {
 }
 
 Tid thread_id() {
-
+	//printf("THREAD ID STARTED\n");
 	return runningThread->id;
 }
 
 Tid thread_create(void (*fn) (void *), void *parg) {
-
+	//printf("THREAD CREATE IS STARTED\n");
 	Tid assignedID;
-	int i = 0;
+	int i = 1;
 	for (; i < THREAD_MAX_THREADS; i++){
 		if(availableThreadIds[i] == 0){
 			break;
@@ -221,22 +286,29 @@ Tid thread_create(void (*fn) (void *), void *parg) {
 	}
 	assignedID = i;
 	availableThreadIds[i] = 1;
+	//printf("THREAD CREATE ASSIGNED Id IS %d\n",i);
 
 	struct thread *createdThread = (struct thread *)malloc((sizeof(struct thread)));
 	
-	if (!createdThread) {
+	if (createdThread == NULL) {
 		return THREAD_NOMEMORY;
 	}
 
-	createdThread->stack_ptr = (void *)malloc(THREAD_MIN_STACK);	
-	void *assigningStack = (createdThread->stack_ptr +THREAD_MIN_STACK) - (THREAD_MIN_STACK)%16;
+	void * stackPTR = (void *)malloc(THREAD_MIN_STACK);
+	
+	if(stackPTR == NULL){
+		return THREAD_NOMEMORY;
+	}
+	createdThread->stack_ptr = stackPTR;	
+	void *assigningStack = (createdThread->stack_ptr +THREAD_MIN_STACK) - (THREAD_MIN_STACK)%16 -8;
 
 
 	int err = 0;
 	ucontext_t savedContext;
 	err = getcontext(&savedContext);
 	assert(!err);
-	createdThread->mycontext = mycontext;
+	createdThread->mycontext = savedContext;
+	createdThread->id = assignedID;
 
 	createdThread->mycontext.uc_mcontext.gregs[REG_RSP] = (unsigned long) assigningStack;
 	createdThread->mycontext.uc_mcontext.gregs[REG_RIP] = (unsigned long) &thread_stub;
@@ -247,41 +319,67 @@ Tid thread_create(void (*fn) (void *), void *parg) {
 
 	createdThread->status  = 1;
 	enQ(createdThread);
-
+	//printf("THREAD CREATE IS DONE\n");
 	return assignedID;
 }
 
 
 Tid thread_yield(Tid want_tid) {
-	
+	printf("THREAD YEILD IS STARTED\n");
 	remove_tobedeleted();
+	printf("want tid: %d \n",want_tid);
+	
+	Tid check1 = checkIfExists(want_tid);
+	printf("value of check1 is %d\n",check1);
 
+
+	printNodes();
+	//printf("value of runnign thread is %d\n",runningThread->id);
+	
 	int err = 0;
 	if (want_tid == runningThread->id || want_tid == THREAD_SELF){
-		assert(!err);
+		printf("return itself\n");
 		return runningThread->id;
 
-	} else if(want_tid == THREAD_ANY){
+	} 
+	else if(want_tid == THREAD_ANY){ //yield any
 
 		if (rq->head == NULL){
 			return THREAD_NONE;
 		}
-		err = getcontext(&(runningThread->mycontext));
-		runningThread->status = 1;
-		assert(!err);
-		enQ(runningThread);
-
+		// yield any
+		printf("saving context in yeld\n");
+		int setcontext_called = 0;
 		struct thread *threadFromQueue = poll();
+		err = getcontext(&(runningThread->mycontext));
+		assert(!err);
+		if(setcontext_called == 1){
+			return threadFromQueue->id;
+
+		}
+
+
+		
+		printf("polled from queue id is  %d\n",threadFromQueue->id);
+		printf("running thread is %d\n",runningThread->id);
+
+		enQ(runningThread);
+		runningThread->status = 1;
 		runningThread = threadFromQueue;
 		threadFromQueue->status = 0;
-
-		err = setcontext(&(runningThread->mycontext));
+		
+		setcontext_called = 1;
+		err = setcontext(&(threadFromQueue->mycontext));
 		assert(!err);
-		return threadFromQueue->id;
-
-	} else if (want_tid < -2 ){
 		return THREAD_INVALID;
-	} else{
+
+	} 
+	
+	else if (want_tid < -2 || want_tid > THREAD_MAX_THREADS || check1 ==THREAD_NONE || check1==THREAD_INVALID){
+		return THREAD_INVALID;
+	} 
+		
+	else{
 		if (rq->head == NULL){
 			return THREAD_INVALID;
 		}
@@ -289,64 +387,74 @@ Tid thread_yield(Tid want_tid) {
 		if (threadFromQueue == NULL){
 			return THREAD_INVALID;
 		}
+		//printf("we found thread and now we we want to swtich context\n");
+		int setcontext_called = 0;
 		err = getcontext(&(runningThread->mycontext));
-		runningThread->status = 1;
 		assert(!err);
+
+		if(setcontext_called == 1){
+			return threadFromQueue->id;
+		}
+		
+		
+		runningThread->status = 1;
 		enQ(runningThread);
 		threadFromQueue->status = 0;
 		runningThread = threadFromQueue;
 
+
+		setcontext_called = 1;
 		err = setcontext(&(threadFromQueue->mycontext));
 		assert(!err);
-		return want_tid;
-	}
 
+
+		//printf("dequed from queue id is  %d\n",threadFromQueue->id);
+		//printf("running thread is %d\n",runningThread->id);
+		return THREAD_INVALID;
+	}
+		//printf("THREAD YEILD IS DONE\n");
+	
 	return THREAD_SELF;
 }
 
 
 
-Tid thread_exit() {
-
+/*Tid thread_exit() {
+		printf("THREAD EXIT IS STARTED\n");
 	if (rq->head == NULL){
 		return THREAD_NONE;
 	}
 	else{
 		runningThread->status = 2; // set flag
 		int err = thread_yield(THREAD_ANY);
+		if (err == THREAD_NONE){
+			//printf("THREAD YEILD IS CREATED\n");
+			return THREAD_NONE;
+		}
+		return err;
 
 	}
+		//printf("THREAD EXIT IS DONE\n");
+	return THREAD_FAILED;
+} */
+
+
+
+
+Tid thread_exit() {
+	
 	return THREAD_FAILED;
 }
 
 
-
-Tid checkQ(Tid tid){
-	if (rq->head == NULL){
-		return THREAD_NONE;	
-	}
-	else{
-		node *temp = rq->head;
-		
-		while(temp != NULL){
-			if (temp->thr->id == tid){
-				
-				temp->thr->status = 2;
-				return temp->thr->id; //TODO: change	
-			}
-			temp = temp->next;
-		}
-	return THREAD_INVALID;
-	} 
-}
-
 Tid thread_kill(Tid tid) {
+		//printf("THREAD kill IS CREATED\n");
 	if (tid == runningThread->id){
 		return THREAD_INVALID;
 	}
 	int err = checkQ(tid);
 	if (err == THREAD_NONE || err == THREAD_INVALID){
-	return THREAD_INVALID;
+		return THREAD_INVALID;
 	}
 	return err;
 }
