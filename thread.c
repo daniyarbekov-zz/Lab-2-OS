@@ -355,7 +355,6 @@ Tid thread_yield(Tid want_tid) {
 		assert(!err);
 		if(setcontext_called == 1){
 			return threadFromQueue->id;
-
 		}
 
 
@@ -609,4 +608,135 @@ cv_broadcast(struct cv *cv, struct lock *lock)
 	assert(lock != NULL);
 
 	TBD();
+}
+
+
+
+
+
+//  ****************************************************************************************************************************************************************************
+
+
+
+
+struct thread {
+	/* ... Fill this in ... */
+
+	Tid id;
+	//status = 0 (running),(ready) 
+	int status;
+	void *stack_ptr;
+	ucontext_t *mycontext;
+};
+
+
+typedef struct node {
+	struct thread *thr;
+	struct node *next;
+} node;
+
+
+typedef struct readyQ{
+	node *head;
+	node *back;
+} readyQ;
+
+
+
+node *buildNode(struct thread *thr)  { 
+    node *temp = (node*)malloc(sizeof(node));
+	temp->thr = thr;
+    temp->next = NULL; 
+    
+	return temp;  
+} 
+  
+void initializeQ(readyQ *rq) { 
+    rq = (struct readyQ*)malloc(sizeof(struct readyQ)); 
+    rq->head = NULL;
+	rq->back = NULL;
+} 
+
+
+void enQ (struct thread *thr, readyQ *rq){
+	//printf("calling build node\n");
+	node *addedNode = buildNode(thr);
+
+
+	if(rq->head == NULL){
+		rq->head = addedNode;
+		rq->back = addedNode;
+		return;
+	}
+	else if(rq->head == rq->back){
+		rq->back = addedNode;
+		rq->head->next = rq->back;
+		return;
+	} else{
+		rq->back->next = addedNode;
+		rq->back = rq->back->next;
+		return;
+	}
+}
+
+
+
+
+
+
+struct thread* deQ (Tid id){
+	if(rq->head == NULL){
+		return NULL;
+
+	} else{
+		node *temp = NULL;
+		node *nextTemp = rq->head;
+
+		while(nextTemp != NULL){
+			if (nextTemp->thr->id == id && temp == NULL){
+				rq->head = nextTemp->next;
+				if(rq->head == NULL){
+					rq->back = rq->head;
+				}
+				struct thread* thr = nextTemp->thr;
+				free(nextTemp);
+				return thr;
+
+			} else if(nextTemp->thr->id == id){
+				if(rq->back == nextTemp){
+					rq->back = temp;
+				}
+
+				temp->next = nextTemp->next;
+				struct thread* thr = nextTemp->thr;
+				free(nextTemp);
+				return thr;
+
+			}
+			temp = nextTemp;
+			nextTemp = nextTemp->next;
+		}
+		return NULL;
+	}
+}
+
+
+struct thread* poll (){
+	if(rq->head == NULL){
+		return NULL;
+
+	} else{
+		node *temp = rq->head;
+		node *nextTemp = rq->head->next;
+
+		rq->head = nextTemp;
+		struct thread* thre = temp->thr;
+		free(temp);
+
+		if(rq->head == NULL){
+			rq->back = NULL;
+		}
+	
+		return thre;
+	}
 }
