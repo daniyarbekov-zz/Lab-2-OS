@@ -684,7 +684,7 @@ void enQ (struct thread *thr, readyQ *rq){
 
 
 
-struct thread* deQ (Tid id){
+struct thread* deQ (Tid id, readyQ *rq){
 	if(rq->head == NULL){
 		return NULL;
 
@@ -721,7 +721,7 @@ struct thread* deQ (Tid id){
 }
 
 
-struct thread* poll (){
+struct thread* poll (readyQ *rq){
 	if(rq->head == NULL){
 		return NULL;
 
