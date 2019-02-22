@@ -124,7 +124,6 @@ struct thread* deQ (Tid id, readyQ *rq){
 struct thread* poll (readyQ *rq){
 	if(rq->head == NULL){
 		return NULL;
-
 	} else{
 		node *temp = rq->head;
 		node *nextTemp = rq->head->next;
@@ -148,6 +147,7 @@ readyQ *killq;
 readyQ *waitq; //lab3
 int *availableThreadIds;
 
+readyQ **arrayOfWaitQPointers;
 
 
 
@@ -155,11 +155,11 @@ void printNodes(readyQ *rq){
 	//printf("PRINTING IS started\n");
 	 node *temp = rq->head;
 	while(temp != NULL){
-	//	printf("node in queue: %d, ", temp->thr->id);
+		printf("node in queue: %d, ", temp->thr->id);
 		temp = temp->next;
 	}
 	//printf("\n");
-	//printf("finished printing\n");
+	//printf("finished printing nodes\n");
 	return;
 }
 
@@ -182,6 +182,7 @@ void destroyNodes( readyQ *killq){
 		free(sub->thr->stack_ptr);
 		free(sub->thr);
 		free(sub);
+
 	}
 	//printf("finished destroynode\n");
 	killq->head = NULL;
@@ -256,6 +257,10 @@ void thread_init(void) { // lab3 update
 	killq->back = NULL;
 
 
+	//waitq = wait_queue_create();
+
+
+
 
 	int err = 0;
 	runningThread = (struct thread *)malloc((sizeof(struct thread)));
@@ -271,7 +276,15 @@ void thread_init(void) { // lab3 update
 	}
 	availableThreadIds[0] = 1;
 
-	printf("init finish \n");
+
+	arrayOfWaitQPointers = (readyQ **)malloc(THREAD_MAX_THREADS*sizeof(readyQ*));
+
+	for(int i = 0; i < THREAD_MAX_THREADS; i++){
+		arrayOfWaitQPointers[i] = NULL;
+	}
+
+
+	//printf("init finish \n");
 	interrupts_set(enabled);
 
 }
@@ -398,7 +411,11 @@ Tid thread_yield(Tid want_tid) { //lab3 update
 		runningThread = threadFromQueue;
 		threadFromQueue->status = 0;
 
+
+		interrupts_set(0);
 		setcontext_called = 1;
+
+
 		err = setcontext(&(threadFromQueue->mycontext));
 		assert(!err);
 		interrupts_set(enabled);
@@ -440,7 +457,7 @@ Tid thread_yield(Tid want_tid) { //lab3 update
 		threadFromQueue->status = 0;
 		runningThread = threadFromQueue;
 
-
+		interrupts_set(0);
 		setcontext_called = 1;
 		err = setcontext(&(threadFromQueue->mycontext));
 		assert(!err);
@@ -478,11 +495,19 @@ Tid thread_exit() { //lab3 update
 		return THREAD_NONE;
 	}
 	runningThread->status = 2;
+
+	if (arrayOfWaitQPointers[runningThread->id] != NULL){
+		thread_wakeup(arrayOfWaitQPointers[runningThread->id],1);
+		wait_queue_destroy(arrayOfWaitQPointers[runningThread->id]);
+		arrayOfWaitQPointers[runningThread->id] = NULL;
+	}
+
 	enQ(runningThread, killq);
 
 	availableThreadIds[runningThread->id] = 0;
 
 	runningThread = threadFromQueue;
+	interrupts_set(0);
 	setcontext(&(runningThread->mycontext));
 	interrupts_set(enabled);
 	return THREAD_NONE;
@@ -494,13 +519,11 @@ Tid thread_kill(Tid tid) { //lab3 update
 
 	if (runningThread == NULL){
 		interrupts_set(enabled);
-
-		return THREAD_FAILED;
+		return THREAD_INVALID;
 
 	}
 	if (readyq->head == NULL){
 		interrupts_set(enabled);
-
 		return THREAD_INVALID;
 	}
 
@@ -520,8 +543,8 @@ Tid thread_kill(Tid tid) { //lab3 update
 	enQ(threadFromQueue, killq);
 	threadFromQueue->status = 2;
 	availableThreadIds[threadFromQueue->id] = 0;
-	interrupts_set(enabled);
 
+	interrupts_set(enabled);
 	return threadFromQueue->id;
 }
 
@@ -556,6 +579,7 @@ void
 wait_queue_destroy(struct wait_queue *wq)
 {
 
+
 	/* method 1
 	while(wq->head != NULL){
 		node *temp = wq->head;
@@ -572,16 +596,18 @@ wait_queue_destroy(struct wait_queue *wq)
 
 
 // suspend calling thread, push to waitQ
+// poll from readyQ
 Tid
 thread_sleep(struct wait_queue *queue)
 {
 	int enabled = interrupts_set(0); // set to block state, save Previous state into variable "enabled"
 	int err = 0;
-	// if waitq is empty
-	if (queue->head == NULL){	// why????
+	// if waitq is not initized
+	if (queue == NULL){
 		interrupts_set(enabled);
 		return THREAD_INVALID;
 	}
+
 
 	// if readyq empty, i.e. no more thread to run
 	if (readyq->head == NULL){
@@ -592,16 +618,22 @@ thread_sleep(struct wait_queue *queue)
 
 	int setcontext_called = 0;
 	struct thread *threadFromQueue = poll(readyq);
+	//printf("polled thread id is : %d", threadFromQueue->id);
+
+	if(threadFromQueue == NULL){
+		return THREAD_NONE;
+	}
+
+	//printNodes(queue);
+
 	err = getcontext(&(runningThread->mycontext));
 	assert(!err);
-
 	if(setcontext_called == 1){
 		interrupts_set(enabled);
 		return threadFromQueue->id;
 	}
-
-	enQ(runningThread,waitq); // push to end of waitq
 	runningThread->status = 3; // set status to sleep
+	enQ(runningThread,queue); // push to end of waitq
 	runningThread = threadFromQueue; // run first thread from readyq
 	threadFromQueue->status = 0; // set status to running
 
@@ -610,8 +642,8 @@ thread_sleep(struct wait_queue *queue)
 	assert(!err);
 
 	interrupts_set(enabled);
-
 	return THREAD_FAILED;
+
 }
 
 
@@ -619,24 +651,25 @@ thread_sleep(struct wait_queue *queue)
 int
 thread_wakeup(struct wait_queue *queue, int all)
 {
-	printf("start wake up\n");
+	//printf("start wake up\n");
 	int enabled = interrupts_set(0);
-	printf("after enabled\n");
+	//printf("after enabled\n");
 
 	// if empty waitq
-	if (queue->head == NULL || queue == NULL){
-	printf("wakeup head NULL \n");
-	interrupts_set(enabled);
+	if (queue == NULL || queue->head == NULL){
+	//	printf("wakeup head NULL \n");
+		interrupts_set(enabled);
 
-	return 0;
+		return 0;
 	}
 
 	// if only wake up one thread in waitq
 	if (all == 0){
+	//	printf("wakeup all = 0\n");
 		struct thread *threadFromQueue = poll(queue); // poll first element in waitq
 		threadFromQueue->status = 1; //set status to ready
 		enQ(threadFromQueue,readyq); // push to end of readyQ
-		printf("wakeup all = 0\n");
+	//	printf("wakeup all = 0 finish \n");
 		interrupts_set(enabled);
 
 		return 1;
@@ -645,17 +678,21 @@ thread_wakeup(struct wait_queue *queue, int all)
 	if (all == 1){
 		int counter = 0;
 		while(queue->head != NULL){
+	//		printf("wakeup all = 1 start\n");
+
 			struct thread *threadFromQueue = poll(queue);
 			threadFromQueue->status = 1; //set status to ready
 			enQ(threadFromQueue,readyq); // push to end of readyQ
 			counter += 1; //
 		}
-		printf("wakeup all = 1\n");
+	//	printf("wakeup all = 1 finish\n");
 
 		interrupts_set(enabled);
+		//printf("counter is %d \n", counter);
 		return counter;
 	}
 	// will never reach below
+	//printf("shouldnt reach **** \n");
 	interrupts_set(enabled);
 	return 0;
 }
@@ -664,51 +701,173 @@ thread_wakeup(struct wait_queue *queue, int all)
 Tid
 thread_wait(Tid tid)
 {
-	TBD();
-	return 0;
+	int enabled = interrupts_set(0);
+	//printf("thread_wait start");
+
+	//printf("in wait, running tid is %d \n", runningThread->id);
+	if (tid < 0 || tid > THREAD_MAX_THREADS){
+		interrupts_set(enabled);
+	//	printf("TID IS INVALID\n");
+
+		return THREAD_INVALID;
+	}
+	if(tid == runningThread->id || availableThreadIds[tid] == 0){
+		interrupts_set(enabled);
+	//	printf("ASKS FOR CURRENT TID\n");
+		return THREAD_INVALID;
+	}
+
+	if(arrayOfWaitQPointers[tid] == NULL){
+	   arrayOfWaitQPointers[tid] = wait_queue_create();
+	}
+
+	readyQ *targetQ = arrayOfWaitQPointers[tid]; //is a waitq
+	//printf("THE TARGET TID IS %d", tid);
+
+	//printf("PRINTING THE READY QUEUE******\n");
+	//printNodes(readyq);
+
+	int sleepProcedure = thread_sleep(targetQ);
+
+	if(sleepProcedure == THREAD_FAILED || sleepProcedure == THREAD_NONE || sleepProcedure == THREAD_INVALID){
+		interrupts_set(enabled);
+		return THREAD_INVALID;
+	}
+
+	interrupts_set(enabled);
+	return tid;
 }
 
 struct lock {
 	/* ... Fill this in ... */
+
+	struct wait_queue *waitQ;
+	int status; // 0(available), 1(unavailable)
+	int threadID; // thread acquired the lock
+
 };
 
-struct lock *
-lock_create()
-{
+struct lock * lock_create() {
 	struct lock *lock;
 
 	lock = malloc(sizeof(struct lock));
 	assert(lock);
+	lock->waitQ = (struct wait_queue*)malloc(sizeof(struct wait_queue));
+	lock->waitQ->head = NULL;
+	lock->waitQ->back = NULL;
 
-	TBD();
-
+	lock->status = 0;
+	lock->threadID = -1;
 	return lock;
 }
 
-void
-lock_destroy(struct lock *lock)
-{
+void lock_destroy(struct lock *lock) {
+
+	int enabled = interrupts_set(0);
 	assert(lock != NULL);
 
-	TBD();
+	// if lock is unavailable
+	if(lock->status == 1){
+		thread_sleep(lock->waitQ);
+		interrupts_set(enabled);
+		return;
+	}
 
+	wait_queue_destroy(lock->waitQ); //destroy wait queue
 	free(lock);
+	interrupts_set(enabled);
+	return;
 }
+
+
 
 void
 lock_acquire(struct lock *lock)
 {
+	int enabled = interrupts_set(0);
 	assert(lock != NULL);
+	// if lock is available
 
-	TBD();
+
+
+	if(lock->threadID  == runningThread->id){
+		interrupts_set(enabled);
+		return;
+	}
+
+
+
+
+	// if lock is unavailable
+	// suspend thread until acquires the lock
+	// push current to lock's waitQ, poll from readyQ
+
+	while(lock->status == 1){
+		thread_sleep(lock->waitQ);
+		interrupts_set(enabled);
+	}
+
+	lock->status = 1;
+	lock->threadID = runningThread->id;
+	interrupts_set(enabled);
+
+	return;
 }
+
+
+
+	/*
+	int err;
+	struct thread *threadFromQueue = poll(readyq); // poll first element in readyQ
+	if(threadFromQueue == NULL){
+		interrupts_set(enabled);
+		return;
+		}
+
+	int setcontext_called = 0;
+	err = getcontext(&(runningThread->mycontext));
+	assert(!err);
+	if(setcontext_called == 1){
+		interrupts_set(enabled);
+		return;
+	}
+	runningThread->status = 3; // set status to sleep
+	enQ(runningThread,lock->waitQ); // push to end of lock's waitQ
+	runningThread = threadFromQueue; // run first thread from readyQ
+	threadFromQueue->status = 0; // set status to running
+
+	setcontext_called = 1;
+	err = setcontext(&(threadFromQueue->mycontext));
+	assert(!err);
+
+	interrupts_set(enabled);
+	return;
+*/
 
 void
 lock_release(struct lock *lock)
 {
+	int enabled = interrupts_set(0);
 	assert(lock != NULL);
 
-	TBD();
+	// if lock is available
+	if (lock->status == 0){
+		interrupts_set(enabled);
+		return;
+	}
+
+	// if current running thread is not the thread occupied the lock
+/*if(lock->threadID != runningThread->id){
+		interrupts_set(enabled);
+		return;
+	}
+*/
+
+	thread_wakeup(lock->waitQ,1); // wake up all
+	lock->status = 0;
+	lock->threadID = -1;
+	interrupts_set(enabled);
+	return;
 }
 
 struct cv {
@@ -769,4 +928,3 @@ cv_broadcast(struct cv *cv, struct lock *lock)
 
 
 //  ****************************************************************************************************************************************************************************
-
